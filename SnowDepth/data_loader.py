@@ -65,7 +65,7 @@ def build_dataframe(data_dir):
     -------
     full_df : pandas.DataFrame
         DataFrame containing all pixels with columns in this order:
-        ['aoi_name', 'row', 'col', 'VH_dB', 'VV_dB', 'CrossPolRatio_dB','levation', 'Slope', 'sin_Aspect', 'cos_Aspect', 'SD']
+        ['aoi_name', 'row', 'col', 'VH_dB', 'VV_dB', 'CrossPolRatio_dB','Elevation', 'Slope', 'sin_Aspect', 'cos_Aspect', 'SD']
     """
     aoi_dirs = list_aoi_dirs(data_dir)
     dfs = []
@@ -92,6 +92,42 @@ def build_dataframe(data_dir):
     return full_df
 
 
+def create_h5s(data_dir, out_dir):
+    """
+    Create a HDF5 file containing data from all AOIs.
 
+    The file is created at out_dir/data.h5 and contains one group per AOI:
+      - '<aoi_name>/features': dataset of shape (H, W, C) float32
+      - '<aoi_name>/label':    dataset of shape (H, W, 1) float32
 
+    Parameters
+    ----------
+    data_dir : str
+        Directory of AOI subfolders containing TIF stacks.
+    out_dir : str
+        Directory where data.h5 will be written.
+    """
+    # Ensure output directory exists
+    os.makedirs(out_dir, exist_ok=True)
 
+    # List all AOI directories
+    aoi_dirs = list_aoi_dirs(data_dir)
+    if not aoi_dirs:
+        raise FileNotFoundError(f"No AOI directories found in {data_dir}")
+
+    # Path to the single HDF5 file
+    file_path = os.path.join(out_dir, 'data.h5')
+
+    # Write all AOIs into one HDF5
+    with h5py.File(file_path, 'w') as hf:
+        for aoi_path in aoi_dirs:
+            name = os.path.basename(aoi_path)
+            stack = load_stack(aoi_path).astype('float32')  # (H, W, C+1)
+            feats = stack[..., :-1]                          # (H, W, C)
+            label = stack[..., -1][..., np.newaxis]         # (H, W, 1)
+
+            grp = hf.create_group(name)
+            grp.create_dataset('features', data=feats, compression='gzip')
+            grp.create_dataset('label', data=label, compression='gzip')
+
+    print(f"Wrote single HDF5 with {len(aoi_dirs)} AOI(s) at {file_path}")

@@ -1,3 +1,4 @@
+import h5py
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
@@ -54,7 +55,7 @@ def duggal_RF_split(df, holdout_aoi, seed, pxs_per_aoi=3000, val_size=0.3, featu
         dists, _ = tree.query(pool[['row', 'col']].values, k=1)
         eligible = pool.iloc[np.where(dists[:, 0] >= 10)[0]].copy()
 
-        # Sample validation points (use all if fewer than requested)
+        # Sample validation points (use all if fewer eligeble than requested)
         val_count = int(pxs_per_aoi * val_size)
         if len(eligible) < val_count:
             print(f"AOI {aoi}: only {len(eligible)} eligible val samples, wanted {val_count}; using all {len(eligible)} for validation")
@@ -98,3 +99,61 @@ def duggal_RF_split(df, holdout_aoi, seed, pxs_per_aoi=3000, val_size=0.3, featu
 
     return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
+
+
+def dl_unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18):
+    """
+    Split HDF5 dataset into train/val/test numpy arrays for UNet training.
+
+    Parameters
+    ----------
+    h5_path : str
+        Path to the HDF5 file containing one group per AOI:
+          group:
+            'features' → (H, W, C) float32
+            'label'    → (H, W, 1) float32
+    holdout_aoi : str
+        Name of the AOI group to reserve for test.
+    val_fraction : float, optional
+        Fraction of the *remaining* AOIs to reserve for validation (default=0.3).
+    seed : int, optional
+        RNG seed for reproducibility.
+
+    Returns
+    -------
+    (X_train, y_train), (X_val, y_val), (X_test, y_test)
+        Tuples of numpy arrays:
+          - X: shape (N_images, H, W, C)
+          - y: shape (N_images, H, W, 1)
+    """
+    rng = np.random.RandomState(seed)
+
+    with h5py.File(h5_path, 'r') as hf:
+        aoi_names = list(hf.keys())
+        if holdout_aoi not in aoi_names:
+            raise KeyError(f"Holdout AOI '{holdout_aoi}' not found in {h5_path}")
+
+        # carve out test AOI
+        dev_names  = [n for n in aoi_names if n != holdout_aoi]
+        test_names = [holdout_aoi]
+
+        # shuffle & split dev AOIs into train / val
+        rng.shuffle(dev_names)
+        n_val = int(len(dev_names) * val_fraction)
+        val_names   = dev_names[:n_val]
+        train_names = dev_names[n_val:]
+
+        # loader helper
+        def _load(names):
+            X_list, y_list = [], []
+            for name in names:
+                grp = hf[name]
+                X_list.append(grp['features'][...])
+                y_list.append(grp['label'][...])
+            return np.stack(X_list), np.stack(y_list)
+
+        X_train, y_train = _load(train_names)
+        X_val,   y_val   = _load(val_names)
+        X_test,  y_test  = _load(test_names)
+
+    return (X_train, y_train), (X_val, y_val), (X_test, y_test)
