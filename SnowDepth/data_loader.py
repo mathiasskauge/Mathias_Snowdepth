@@ -5,6 +5,17 @@ import rasterio
 import h5py
 from glob import glob
 
+"""
+Methods to load data for classical and deep learning models
+
+build_dataframe -> returns a pandas dataFrame for tabular data use
+
+create_H5 -> returns a H5 file for DL models
+
+clean_df -> removes rows from dataFrame where Snow Depth is Nan or negative
+
+"""
+
 
 def list_aoi_dirs(data_dir):
     """
@@ -52,7 +63,7 @@ def load_stack(aoi_dir):
     return np.stack(arrs, axis=-1)
  
 
-def build_dataframe(data_dir):
+def build_df(data_dir):
     """
     Build and return a pandas DataFrame containing all pixels from all AOIs.
 
@@ -63,7 +74,7 @@ def build_dataframe(data_dir):
 
     Returns
     -------
-    full_df : pandas.DataFrame
+    df : pandas.DataFrame
         DataFrame containing all pixels with columns in this order:
         ['aoi_name', 'row', 'col', 'VH_dB', 'VV_dB', 'CrossPolRatio_dB','Elevation', 'Slope', 'sin_Aspect', 'cos_Aspect', 'SD']
     """
@@ -75,24 +86,24 @@ def build_dataframe(data_dir):
         H, W, _ = stack.shape
         rows, cols = np.indices((H, W))
         df = pd.DataFrame({
-            'aoi_name':        [name] * (H * W),
-            'row':             rows.ravel(),
-            'col':             cols.ravel(),
-            'VH_dB':           stack[:,:,0].ravel(),
-            'VV_dB':           stack[:,:,1].ravel(),
-            'CrossPolRatio_dB':stack[:,:,2].ravel(),
-            'Elevation':       stack[:,:,3].ravel(),
-            'Slope':           stack[:,:,6].ravel(),
-            'sin_Aspect':      stack[:,:,4].ravel(),
-            'cos_Aspect':      stack[:,:,5].ravel(),
-            'SD':              stack[:,:,7].ravel(),
+            'aoi_name':          [name] * (H * W),
+            'row':               rows.ravel(),
+            'col':               cols.ravel(),
+            'VH_dB':             stack[:, :, 0].ravel(),
+            'VV_dB':             stack[:, :, 1].ravel(),
+            'CrossPolRatio_dB':  stack[:, :, 2].ravel(),
+            'Elevation':         stack[:, :, 3].ravel(),
+            'Slope':             stack[:, :, 4].ravel(),
+            'sin_Aspect':        stack[:, :, 5].ravel(),
+            'cos_Aspect':        stack[:, :, 6].ravel(), 
+            'SD':                stack[:, :, 7].ravel(),  
         })
         dfs.append(df)
-    full_df = pd.concat(dfs, ignore_index=True)
-    return full_df
+    df = pd.concat(dfs, ignore_index=True)
+    return df
 
 
-def create_h5s(data_dir, out_dir):
+def create_h5(data_dir, out_dir):
     """
     Create a HDF5 file containing data from all AOIs.
 
@@ -131,3 +142,27 @@ def create_h5s(data_dir, out_dir):
             grp.create_dataset('label', data=label, compression='gzip')
 
     print(f"Wrote single HDF5 with {len(aoi_dirs)} AOI(s) at {file_path}")
+
+
+def clean_df(df, upper_threshold=None):
+
+    #nan_rows = df['SD'].isna().sum()
+    #negative_rows = (df['SD'] < 0).sum()
+    #print(f"NaN SD values: {nan_rows}")
+    #print(f"Negative SD values: {negative_rows}")
+
+    if upper_threshold is not None:
+        
+        outlier_rows = (df['SD'] > upper_threshold).sum()
+        #print(f"Outlier SD values: {outlier_rows}")
+
+        clean_df = df[(df['SD'] >= 0) & (df['SD'] <= upper_threshold)]
+    else:
+        clean_df = df[df['SD'] >= 0]
+
+    # Print number of rows removed
+    #total_removed = nan_rows + negative_rows + (outlier_rows if upper_threshold is not None else 0)
+    #print(f"Rows removed: {total_removed}")
+    #print(f"Rows remaining: {len(clean_df)}")
+
+    return clean_df

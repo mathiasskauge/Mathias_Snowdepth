@@ -4,35 +4,68 @@ import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.neighbors import KDTree
 
+"""
+Implements splitting strategies for different models
 
-def duggal_RF_split(df, holdout_aoi, seed, pxs_per_aoi=3000, val_size=0.3, features=None):
+"""
+
+def RF_split(dev_df, hold_df, seed, pxs_per_aoi=3000):
+    # Assign SD quartiles within each AOI
+    dev_df['sd_quartile'] = (
+        dev_df
+        .groupby('aoi_name')['SD']
+        .transform(lambda x: pd.qcut(x, 4, labels=False, duplicates='drop'))
+    )
+
+    sss = StratifiedShuffleSplit(n_splits=1, train_size=pxs_per_aoi, random_state=seed)
+
+    samples = []
+
+    for aoi, group in dev_df.groupby('aoi_name'):
+        # Stratified train sampling
+        sample_idx, _ = next(sss.split(group, group['sd_quartile']))
+        df_samples = group.iloc[sample_idx].copy()
+        samples.append(df_samples)
+
+    df_sampled = pd.concat(samples, ignore_index=True)
+
+    # Determine feature columns 
+    feature_cols = [c for c in df_sampled.columns if c not in ('aoi_name', 'row', 'col', 'sd_quartile', 'SD')]
+
+    # Build development arrays
+    X_dev = df_sampled[feature_cols].values
+    y_dev = df_sampled['SD'].values
+    groups = df_sampled['aoi_name'].values
+
+    print(f"Total samples: {len(df_sampled)} across {df_sampled['aoi_name'].nunique()} AOIs")
+    print(f"Features used: {feature_cols}")
+    print(f"X_dev shape: {X_dev.shape}")
+
+    # Build hold‐out arrays using the same feature columns 
+    X_hold = hold_df[feature_cols].values
+    y_hold = hold_df['SD'].values
+    print(f"X_hold shape: {X_hold.shape}")
+
+    return X_dev, y_dev, groups, X_hold, y_hold
+
+
+def duggal_RF_split(dev_df, hold_df, seed, pxs_per_aoi=3000, val_size=0.3, features=None):
     """
-      - Filter out nan and negative SD values
       - Stratified sample "pxs_per_aoi" by SD quartiles
       - From each AOI, draw 70% of "pxs_per_aoi" -> train
       - From remaining, draw 30% of "pxs_per_aoi" -> val
-      - Val points must be ≥100 m (10 pixels) from any train point
-      - Concatenate across AOIs
+      - Val points must be ≥100 m (10 pixels) away from any train point
       - Optionally select a subset of feature columns
     """
 
-    # Separate test set (holdout AOI)
-    mask = df['aoi_name'] == holdout_aoi
-    df_dev  = df[~mask].reset_index(drop=True)
-    df_test = df[mask].reset_index(drop=True)
-
-    # Filter invalid snow-depth
-    df_dev = df_dev.loc[(df_dev['SD'] >= 0) & (df_dev['SD'].notna())].copy()
-    df_test = df_test.loc[(df_test['SD'] >= 0) & (df_test['SD'].notna())].copy()
-
     # Assign quartile labels within each AOI
-    df_dev['sd_quartile'] = (
-    df_dev
+    dev_df['sd_quartile'] = (
+    dev_df
       .groupby('aoi_name')['SD']
       .transform(lambda x: pd.qcut(x, 4, labels=False, duplicates='drop')))
 
     # Prepare stratified splitter: 
-    splitter = StratifiedShuffleSplit(
+    sss = StratifiedShuffleSplit(
         n_splits=1,
         train_size=int(pxs_per_aoi * (1 - val_size)),
         random_state=seed
@@ -42,9 +75,9 @@ def duggal_RF_split(df, holdout_aoi, seed, pxs_per_aoi=3000, val_size=0.3, featu
     val_parts = []
 
     # Loop per AOI
-    for aoi, group in df_dev.groupby('aoi_name'):
+    for aoi, group in dev_df.groupby('aoi_name'):
         # Stratified train sampling
-        train_idx, _ = next(splitter.split(group, group['sd_quartile']))
+        train_idx, _ = next(sss.split(group, group['sd_quartile']))
         df_train = group.iloc[train_idx].copy()
 
         # Build validation pool
@@ -83,21 +116,23 @@ def duggal_RF_split(df, holdout_aoi, seed, pxs_per_aoi=3000, val_size=0.3, featu
                 raise KeyError(f"Features not found: {missing}")
             sel_cols = list(features)
 
-    # Extract arrays
+    # Build development arrays
     X_train = df_train[sel_cols].values
     y_train = df_train['SD'].values
     X_val = df_val[sel_cols].values
     y_val = df_val['SD'].values
-    X_test = df_test[sel_cols].values
-    y_test = df_test['SD'].values
+
+    # Build hold‐out arrays using the same feature columns 
+    X_hold = hold_df[sel_cols].values
+    y_hold = hold_df['SD'].values
 
     # Report
     print(f"Features used for modeling: {sel_cols}")
     print(f"X_train shape: {X_train.shape}")
     print(f"X_val shape: {X_val.shape}")
-    print(f"X_test shape: {X_test.shape}")
+    print(f"X_hold shape: {X_hold.shape}")
 
-    return (X_train, y_train), (X_val, y_val), (X_test, y_test)
+    return X_train, y_train, X_val, y_val, X_hold, y_hold
 
 
 
@@ -121,7 +156,7 @@ def dl_unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18):
 
     Returns
     -------
-    (X_train, y_train), (X_val, y_val), (X_test, y_test)
+    (X_train, y_train), (X_val, y_val), (X_hold, y_hold)
         Tuples of numpy arrays:
           - X: shape (N_images, H, W, C)
           - y: shape (N_images, H, W, 1)
@@ -154,6 +189,6 @@ def dl_unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18):
 
         X_train, y_train = _load(train_names)
         X_val,   y_val   = _load(val_names)
-        X_test,  y_test  = _load(test_names)
+        X_hold,  y_hold  = _load(test_names)
 
-    return (X_train, y_train), (X_val, y_val), (X_test, y_test)
+    return (X_train, y_train), (X_val, y_val), (X_hold, y_hold)

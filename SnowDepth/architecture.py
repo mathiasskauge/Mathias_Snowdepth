@@ -1,6 +1,11 @@
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 
+"""
+Architectures for DL models
+
+"""
+
 def conv_block(x, filters):
     x = layers.Conv2D(filters, 3, padding='same', activation='relu')(x)
     x = layers.Conv2D(filters, 3, padding='same', activation='relu')(x)
