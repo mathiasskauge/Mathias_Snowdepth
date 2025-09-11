@@ -108,8 +108,8 @@ def create_h5(data_dir, out_dir):
     Create a HDF5 file containing data from all AOIs.
 
     The file is created at out_dir/data.h5 and contains one group per AOI:
-      - '<aoi_name>/features': dataset of shape (H, W, C) float32
-      - '<aoi_name>/label':    dataset of shape (H, W, 1) float32
+      - '<aoi_name>/features': dataset of shape (H, W, C) 
+      - '<aoi_name>/label':    dataset of shape (H, W, 1) 
 
     Parameters
     ----------
