@@ -136,56 +136,109 @@ def duggal_RF_split(dev_df, hold_df, seed, pxs_per_aoi=3000, val_size=0.3, featu
 
 
 
-def dl_unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18):
+import numpy as np
+import h5py
+
+def dl_unet_split(h5_path,
+                  holdout_aoi,
+                  val_fraction=0.3,
+                  seed=18,
+                  patch_size=256,
+                  stride=None,
+                  min_valid_frac=0.0):
     """
-    Split HDF5 dataset into train/val/test numpy arrays for UNet training.
+    Split HDF5 dataset into train/val/test for UNet training, with tiling.
+
+    Why: AOIs may have different H,W; tiling normalizes shapes so we can stack.
 
     Parameters
     ----------
     h5_path : str
-        Path to the HDF5 file containing one group per AOI:
-          group:
-            'features' → (H, W, C) float32
-            'label'    → (H, W, 1) float32
+        Path to HDF5 with groups per AOI:
+          '<aoi>/features': (H, W, C) float32
+          '<aoi>/label'   : (H, W, 1) float32
+          '<aoi>/mask'    : (H, W)    uint8  [optional; 1=valid SD]
     holdout_aoi : str
-        Name of the AOI group to reserve for test.
+        AOI name reserved as test (hold-out).
     val_fraction : float, optional
-        Fraction of the *remaining* AOIs to reserve for validation (default=0.3).
+        Fraction of remaining AOIs for validation (default 0.3).
     seed : int, optional
-        RNG seed for reproducibility.
+        RNG seed (default 18).
+    patch_size : int, optional
+        Square tile size extracted from each AOI (default 256).
+    stride : int or None, optional
+        Sliding-window stride; defaults to `patch_size` (non-overlapping).
+    min_valid_frac : float, optional
+        Minimum fraction of valid SD pixels (from mask or SD>=0 & not NaN)
+        required to keep a patch (default 0.0).
 
     Returns
     -------
     (X_train, y_train), (X_val, y_val), (X_hold, y_hold)
-        Tuples of numpy arrays:
-          - X: shape (N_images, H, W, C)
-          - y: shape (N_images, H, W, 1)
+        Each X: (N, patch_size, patch_size, C)
+              y: (N, patch_size, patch_size, 1)
     """
     rng = np.random.RandomState(seed)
+    if stride is None:
+        stride = patch_size
+
+    def _tile_one(feats, label, mask, ps, st, min_frac):
+        H, W, C = feats.shape
+        xs, ys = [], []
+        for r in range(0, H - ps + 1, st):
+            for c in range(0, W - ps + 1, st):
+                m = mask[r:r+ps, c:c+ps]
+                if m.size == 0:
+                    continue
+                valid_frac = m.mean()  # mask is 1/0
+                if valid_frac < min_frac:
+                    continue
+                xs.append(feats[r:r+ps, c:c+ps, :])
+                ys.append(label[r:r+ps, c:c+ps, :])
+        if xs:
+            return np.stack(xs), np.stack(ys)
+        else:
+            # Return empty arrays with correct last dims if nothing qualified
+            return (np.empty((0, ps, ps, feats.shape[-1]), dtype=feats.dtype),
+                    np.empty((0, ps, ps, 1), dtype=label.dtype))
 
     with h5py.File(h5_path, 'r') as hf:
         aoi_names = list(hf.keys())
         if holdout_aoi not in aoi_names:
             raise KeyError(f"Holdout AOI '{holdout_aoi}' not found in {h5_path}")
 
-        # carve out test AOI
+        # dev vs test sets by AOI
         dev_names  = [n for n in aoi_names if n != holdout_aoi]
         test_names = [holdout_aoi]
 
-        # shuffle & split dev AOIs into train / val
         rng.shuffle(dev_names)
         n_val = int(len(dev_names) * val_fraction)
         val_names   = dev_names[:n_val]
         train_names = dev_names[n_val:]
 
-        # loader helper
         def _load(names):
-            X_list, y_list = [], []
+            Xs, Ys = [], []
             for name in names:
                 grp = hf[name]
-                X_list.append(grp['features'][...])
-                y_list.append(grp['label'][...])
-            return np.stack(X_list), np.stack(y_list)
+                feats  = grp['features'][...]          # (H, W, C)
+                label  = grp['label'][...]             # (H, W, 1)
+                if 'mask' in grp:
+                    mask = grp['mask'][...].astype(np.uint8)
+                else:
+                    # build mask from SD only (not NaN and >=0)
+                    sd2d = label[..., 0]
+                    mask = ((~np.isnan(sd2d)) & (sd2d >= 0)).astype(np.uint8)
+
+                x, y = _tile_one(feats, label, mask, patch_size, stride, min_valid_frac)
+                if x.shape[0] > 0:
+                    Xs.append(x)
+                    Ys.append(y)
+
+            if not Xs:
+                # no patches extracted
+                return (np.empty((0, patch_size, patch_size, feats.shape[-1]), dtype=np.float32),
+                        np.empty((0, patch_size, patch_size, 1), dtype=np.float32))
+            return np.concatenate(Xs, axis=0), np.concatenate(Ys, axis=0)
 
         X_train, y_train = _load(train_names)
         X_val,   y_val   = _load(val_names)
