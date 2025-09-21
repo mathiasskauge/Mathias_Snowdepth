@@ -150,7 +150,7 @@ def create_h5(data_dir, out_dir, write_mask=True, upper_threshold=3):
         raise FileNotFoundError(f"No AOI directories found in {data_dir}")
 
     # Path to the single HDF5 file
-    file_path = os.path.join(out_dir, 'data.h5')
+    file_path = os.path.join(out_dir, 'dataframe.h5')
 
     # Write all AOIs into one HDF5
     with h5py.File(file_path, 'w') as hf:

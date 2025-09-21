@@ -139,7 +139,7 @@ def duggal_RF_split(dev_df, hold_df, seed, pxs_per_aoi=3000, val_size=0.3, featu
 import numpy as np
 import h5py
 
-def dl_unet_split(h5_path,
+def unet_split(h5_path,
                   holdout_aoi,
                   val_fraction=0.3,
                   seed=18,

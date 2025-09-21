@@ -1,5 +1,4 @@
-import tensorflow as tf
-from tensorflow.keras import layers, models
+from keras import layers, models
 
 def conv_block(x, filters):
     x = layers.Conv2D(filters, 3, padding="same", use_bias=False)(x)
@@ -11,7 +10,7 @@ def conv_block(x, filters):
     x = layers.ReLU()(x)
     return x
 
-def unet_regression(input_shape, base_filters=32):
+def unet(input_shape, base_filters=32):
     """
     UNet for per-pixel regression
     - Linear 1-channel output
