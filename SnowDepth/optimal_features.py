@@ -36,9 +36,9 @@ def optimal_feature_sets(df, top_k, n_per_aoi):
     # Create dict with algorithms and their selected features
     selected_features = {"HSIC": hsic_feats, "PCC": pcc_feats, "MI": mi_feats}
 
-    print(f"HSIC (top {top_k}): {hsic_feats}")
-    print(f"PCC (top {top_k}): {pcc_feats}")
-    print(f"MI (top {top_k}): {mi_feats}")
+    print(f"HSIC selected: {hsic_feats}")
+    print(f"PCC selected: {pcc_feats}")
+    print(f"MI selected): {mi_feats}")
     return selected_features
 
 

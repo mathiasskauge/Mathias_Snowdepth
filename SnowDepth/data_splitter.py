@@ -8,7 +8,7 @@ Implements splitting strategies for different models
 
 """
 
-def RF_split(dev_df, hold_df, seed, pxs_per_aoi=1000):
+def ML_split(dev_df, hold_df, seed, pxs_per_aoi=1000):
 
     dev_df = dev_df.copy()
     
