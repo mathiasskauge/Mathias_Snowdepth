@@ -275,7 +275,7 @@ def build_h5(data_dir, out_dir, write_mask=True, upper_threshold=3, selected_fea
                     raise KeyError(f"Unknown feature(s) in selected_features: {missing}")
                 idxs = [FEATURE_NAMES.index(n) for n in selected_features]
                 feats = feats[..., idxs]     # (H, W, C_selected)
-                feat_names_to_write = list(selected_features)  # preserve caller order
+                feat_names_to_write = list(selected_features) 
             else:
                 feat_names_to_write = FEATURE_NAMES
 
