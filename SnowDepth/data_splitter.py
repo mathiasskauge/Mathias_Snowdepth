@@ -8,7 +8,10 @@ Implements splitting strategies for different models
 
 """
 
-def RF_split(dev_df, hold_df, seed, pxs_per_aoi=3000):
+def RF_split(dev_df, hold_df, seed, pxs_per_aoi=1000):
+
+    dev_df = dev_df.copy()
+    
     # Assign SD quartiles within each AOI
     dev_df['sd_quartile'] = (
         dev_df
