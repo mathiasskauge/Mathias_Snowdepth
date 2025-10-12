@@ -4,7 +4,7 @@ import pandas as pd
 import rasterio
 import h5py
 from glob import glob
-from config import FEATURE_NAMES
+from SnowDepth.config import FEATURE_NAMES
 
 """
 Methods to load data and calculate features for classic ML and deep learning models.

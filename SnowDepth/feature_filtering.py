@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from pyHSICLasso import HSICLasso
+from sklearn.feature_selection import mutual_info_regression
 
 
 def hsic_lasso_select(df, feature_cols, top_k: int = 10):
@@ -8,7 +9,6 @@ def hsic_lasso_select(df, feature_cols, top_k: int = 10):
     HSIC-Lasso feature selection using `pyHSICLasso`
 
     Returns:
-
     selected_features : List[str]
     weights_df : DataFrame with ['feature','score'] sorted by score desc
     """
@@ -51,7 +51,7 @@ def pcc_scores(df, feature_cols):
     )
 
 
-def pcc_select(df, feature_cols, top_k = 12, max_intercorr: float = 0.90, min_abs_corr: float = 0.0):
+def pcc_select(df, feature_cols, top_k: int = 10, max_intercorr: float = 0.90, min_abs_corr: float = 0.0):
     """
     Pearson-correlation-based feature filtering 
 
@@ -69,6 +69,55 @@ def pcc_select(df, feature_cols, top_k = 12, max_intercorr: float = 0.90, min_ab
     selected = []
     for f in cand_feats:
         if all(np.abs(inter.loc[f, s]) < max_intercorr for s in selected):
+            selected.append(f)
+
+    return selected, rank, inter
+
+
+def mi_scores(df, feature_cols, n_neighbors=5, random_state=42):
+    """
+    Mutual Information (nonparametric) between each feature and SD.
+    Returns a DataFrame sorted by MI desc with columns: ['feature','mi']
+    """
+    if feature_cols is None:
+        feature_cols = [c for c in df.columns if c not in ("aoi_name", "row", "col", "SD")]
+
+    X = df[feature_cols].replace([np.inf, -np.inf], np.nan)
+    y = df["SD"]
+
+    # Drop rows with any NaN in X or y
+    valid = X.notna().all(axis=1) & y.notna()
+    Xv = X.loc[valid].to_numpy(dtype=float)
+    yv = y.loc[valid].to_numpy(dtype=float)
+
+    mi = mutual_info_regression(Xv, yv, n_neighbors=int(n_neighbors), random_state=random_state)
+    return (
+        pd.DataFrame({"feature": feature_cols, "mi": mi})
+        .sort_values("mi", ascending=False)
+        .reset_index(drop=True)
+    )
+
+def mi_select(df, feature_cols, top_k: int = 10, max_intercorr: float = 0.90, n_neighbors=5, random_state=42):
+    """
+    MI-based feature filtering: rank by MI, then prune by inter-feature correlation.
+    Returns: selected_features, ranking_df, inter_corr_df (for candidate pool)
+    """
+    rank = mi_scores(df, feature_cols, n_neighbors=n_neighbors, random_state=random_state)
+    cand = rank.head(int(top_k)).copy()
+    cand_feats = cand["feature"].tolist()
+
+    inter = (
+        df[cand_feats]
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna(axis=0, how="any")
+        .corr(method="pearson")
+    )
+
+    selected = []
+    for f in cand_feats:
+        if not selected: 
+            selected.append(f); continue
+        if all(np.abs(inter.loc[f, s]) < max_intercorr for s in selected if f in inter.index and s in inter.columns):
             selected.append(f)
 
     return selected, rank, inter
