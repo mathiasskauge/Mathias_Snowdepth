@@ -48,38 +48,9 @@ def RF_split(dev_df, hold_df, seed, pxs_per_aoi=3000):
     return X_dev, y_dev, groups, X_hold, y_hold
 
 
-def unet_split(h5_path,
-                  holdout_aoi,
-                  val_fraction=0.3,
-                  seed=18,
-                  patch_size=256,
-                  stride=None,
-                  min_valid_frac=0.0):
+def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, stride=None, min_valid_frac=0.0):
     """
     Split HDF5 dataset into train/val/test for UNet training, with tiling.
-
-    Why: AOIs may have different H,W; tiling normalizes shapes so we can stack.
-
-    Parameters
-    ----------
-    h5_path : str
-        Path to HDF5 with groups per AOI:
-          '<aoi>/features': (H, W, C) float32
-          '<aoi>/label'   : (H, W, 1) float32
-          '<aoi>/mask'    : (H, W)    uint8  [optional; 1=valid SD]
-    holdout_aoi : str
-        AOI name reserved as test (hold-out).
-    val_fraction : float, optional
-        Fraction of remaining AOIs for validation (default 0.3).
-    seed : int, optional
-        RNG seed (default 18).
-    patch_size : int, optional
-        Square tile size extracted from each AOI (default 256).
-    stride : int or None, optional
-        Sliding-window stride; defaults to `patch_size` (non-overlapping).
-    min_valid_frac : float, optional
-        Minimum fraction of valid SD pixels (from mask or SD>=0 & not NaN)
-        required to keep a patch (default 0.0).
 
     Returns
     -------

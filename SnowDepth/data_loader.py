@@ -4,32 +4,14 @@ import pandas as pd
 import rasterio
 import h5py
 from glob import glob
+from config import FEATURE_NAMES
 
 """
 Methods to load data and calculate features for classic ML and deep learning models.
 
 build_df -> returns a pandas dataFrame for tabular data use
 
-create_H5 -> returns an H5 file (features/label/mask) for DL models
-
 """
-
-FEATURE_NAMES = [
-    # Base backscatter in dB
-    "Sigma_VH", "Sigma_VV",
-    "Gamma_VH", "Gamma_VV",
-    "Beta_VH",  "Beta_VV",
-    "Gamma_VH_RTC", "Gamma_VV_RTC",
-    # Linear sums/differences
-    "Sigma_sum", "Gamma_sum", "Beta_sum", "Gamma_RTC_sum",
-    "Sigma_diff", "Gamma_diff", "Beta_diff", "Gamma_RTC_diff",
-    # Ratios (in dB)
-    "Sigma_ratio", "Gamma_ratio", "Beta_ratio", "Gamma_RTC_ratio",
-    # Angles
-    "LIA", "IAFE",
-    # Topography
-    "Elevation", "Slope", "sin_Aspect", "cos_Aspect"
-]
 
 def _to_db(x, eps=1e-12):
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -52,25 +34,8 @@ def list_aoi_dirs(data_dir):
 
 def load_stack(aoi_dir):
     """
-    Read and stack raster bands for one AOI directory:
-      - SAR (linear inputs, read by fixed band order in *SAR.tif):
-          1: Sigma0_VH
-          2: Gamma0_VH
-          3: Beta0_VH
-          4: Sigma0_VV
-          5: Gamma0_VV
-          6: Beta0_VV
-          7: Gamma0_VH_2 (RTC)
-          8: Gamma0_VV_2 (RTC)
-          9: localIncidenceAngle (LIA)
-         10: incidenceAngleFromEllipsoid (IAFE)
-      - DEM -> Elevation
-      - Slope
-      - Aspect → sin(Aspect), cos(Aspect)
-      - SD
-
-    Returns
-    -------
+    Read and stack raster bands for one AOI directory
+    Returns:
     stack : np.ndarray of shape (H, W, 27)
             Channels in this exact order:
             FEATURE_NAMES (26) + SD label as the last channel.
@@ -157,7 +122,6 @@ def build_df(data_dir, drop_invalid=True, upper_threshold=3, selected_features=N
     Build and return a pandas DataFrame containing all pixels from all AOIs.
 
     Parameters
-    ----------
     data_dir : str
         Path to directory containing AOI subfolders with TIF files.
 
@@ -171,8 +135,7 @@ def build_df(data_dir, drop_invalid=True, upper_threshold=3, selected_features=N
         If provided, only these feature channels (by name) are written to
         each group's 'features' dataset. Names should be among FEATURE_NAMES.
 
-    Returns
-    -------
+    Returns:
     df : pandas.DataFrame
         DataFrame containing all pixels with columns in this order:
         ['aoi_name','row','col'] + FEATURE_NAMES + ['SD']
