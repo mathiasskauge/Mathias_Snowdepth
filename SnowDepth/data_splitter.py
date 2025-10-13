@@ -46,15 +46,23 @@ def ML_split(dev_df, seed, pxs_per_aoi=1000):
     return X_dev, y_dev, groups
 
 
-def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, stride=None, min_valid_frac=0.0):
+def DL_split(
+    h5_path,
+    holdout_aoi,
+    val_fraction=0.10,       
+    seed=18,
+    patch_size=256,
+    stride=None,
+    min_valid_frac=0.5
+):
     """
-    Split HDF5 dataset into train/val/test for UNet training, with tiling.
+    Split HDF5 dataset into train/val for UNet training using a tile-level split.
 
     Returns
-    -------
-    (X_train, y_train), (X_val, y_val), (X_hold, y_hold)
-        Each X: (N, patch_size, patch_size, C)
-              y: (N, patch_size, patch_size, 1)
+    (X_train, y_train, m_train), (X_val, y_val, m_val)
+        X: (N, patch_size, patch_size, C)
+        y: (N, patch_size, patch_size, 1)
+        m: (N, patch_size, patch_size, 1) -> mask (1=valid, 0=invalid)
     """
     rng = np.random.RandomState(seed)
     if stride is None:
@@ -66,13 +74,11 @@ def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, 
         for r in range(0, H - ps + 1, st):
             for c in range(0, W - ps + 1, st):
                 m = mask[r:r+ps, c:c+ps]
-                if m.size == 0: 
-                    continue
-                if m.mean() < min_frac:
+                if m.size == 0 or m.mean() < min_frac:
                     continue
                 xs.append(feats[r:r+ps, c:c+ps, :])
                 ys.append(label[r:r+ps, c:c+ps, :])
-                ms.append(m[..., None])            
+                ms.append(m[..., None])  # (ps, ps, 1)
         if xs:
             return np.stack(xs), np.stack(ys), np.stack(ms)
         return (
@@ -81,46 +87,51 @@ def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, 
             np.empty((0, ps, ps, 1), np.uint8),
         )
 
-
-    with h5py.File(h5_path, 'r') as hf:
+    with h5py.File(h5_path, "r") as hf:
         aoi_names = list(hf.keys())
         if holdout_aoi not in aoi_names:
             raise KeyError(f"Holdout AOI '{holdout_aoi}' not found in {h5_path}")
 
-        # dev vs test sets by AOI
-        dev_names  = [n for n in aoi_names if n != holdout_aoi]
-        test_names = [holdout_aoi]
+        # Dev = all AOIs except holdout
+        dev_names = [n for n in aoi_names if n != holdout_aoi]
 
-        rng.shuffle(dev_names)
-        n_val = int(len(dev_names) * val_fraction)
-        val_names   = dev_names[:n_val]
-        train_names = dev_names[n_val:]
+        # Tile all dev AOIs and concatenate
+        Xs, Ys, Ms = [], [], []
+        for name in dev_names:
+            grp   = hf[name]
+            feats = grp["features"][...]             # (H, W, C)
+            label = grp["label"][...]                # (H, W, 1)
+            if "mask" in grp:
+                mask = grp["mask"][...].astype(np.uint8)
+            else:
+                sd2d = label[..., 0]
+                mask = ((~np.isnan(sd2d)) & (sd2d >= 0)).astype(np.uint8)
 
-        def _load(names):
-            Xs, Ys = [], []
-            for name in names:
-                grp = hf[name]
-                feats  = grp['features'][...]         
-                label  = grp['label'][...]             
-                if 'mask' in grp:
-                    mask = grp['mask'][...].astype(np.uint8)
-                else:
-                    # build mask from SD only (not NaN and >=0)
-                    sd2d = label[..., 0]
-                    mask = ((~np.isnan(sd2d)) & (sd2d >= 0)).astype(np.uint8)
+            x, y, m = _tile_one(feats, label, mask, patch_size, stride, min_valid_frac)
+            if x.shape[0] > 0:
+                Xs.append(x); Ys.append(y); Ms.append(m)
 
-                x, y = _tile_one(feats, label, mask, patch_size, stride, min_valid_frac)
-                if x.shape[0] > 0:
-                    Xs.append(x)
-                    Ys.append(y)
+        if not Xs:
+            # No patches extracted
+            C = hf[dev_names[0]]["features"].shape[-1] if dev_names else 0
+            empty_X = np.empty((0, patch_size, patch_size, C), dtype=np.float32)
+            empty_y = np.empty((0, patch_size, patch_size, 1), dtype=np.float32)
+            empty_m = np.empty((0, patch_size, patch_size, 1), dtype=np.uint8)
+            return (empty_X, empty_y, empty_m), (empty_X, empty_y, empty_m)
 
-            if not Xs:
-                # no patches extracted
-                return (np.empty((0, patch_size, patch_size, feats.shape[-1]), dtype=np.float32),
-                        np.empty((0, patch_size, patch_size, 1), dtype=np.float32))
-            return np.concatenate(Xs, axis=0), np.concatenate(Ys, axis=0)
-        
-        (X_train, y_train, m_train) = _load(train_names)
-        (X_val,   y_val,   m_val)   = _load(val_names)
-        (X_hold,  y_hold,  m_hold)  = _load(test_names)
-    return (X_train, y_train, m_train), (X_val, y_val, m_val), (X_hold, y_hold, m_hold)
+        X_all = np.concatenate(Xs, axis=0).astype(np.float32)
+        y_all = np.concatenate(Ys, axis=0).astype(np.float32)
+        m_all = np.concatenate(Ms, axis=0).astype(np.uint8)
+
+        # Tile-level split into train/val
+        N = X_all.shape[0]
+        n_val = max(1, int(round(N * float(val_fraction)))) if N > 0 else 0
+        idx = rng.permutation(N)
+        val_idx = idx[:n_val]
+        trn_idx = idx[n_val:]
+
+        X_train, y_train, m_train = X_all[trn_idx], y_all[trn_idx], m_all[trn_idx]
+        X_val,   y_val,   m_val   = X_all[val_idx], y_all[val_idx], m_all[val_idx]
+
+    return (X_train, y_train, m_train), (X_val, y_val, m_val)
+
