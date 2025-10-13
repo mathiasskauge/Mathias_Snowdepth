@@ -61,7 +61,7 @@ def unet(input_shape, base_filters=32):
     return model
 
 
-''' TRANSFORMER '''
+''' VISION TRANSFORMER '''
 
 def _gelu(x):  
     return tf.nn.gelu(x)
