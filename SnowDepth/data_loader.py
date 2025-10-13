@@ -34,11 +34,11 @@ def list_aoi_dirs(data_dir):
 
 def load_stack(aoi_dir):
     """
-    Read and stack raster bands for one AOI directory
+    Read and stack raster bands for one AOI directory.
     Returns:
     stack : np.ndarray of shape (H, W, 27)
             Channels in this exact order:
-            FEATURE_NAMES (26) + SD label as the last channel.
+            FEATURE_NAMES (26) + SD label as the last channel
     """
     arrs = []
 
@@ -117,23 +117,14 @@ def load_stack(aoi_dir):
     return np.stack(arrs, axis=-1)
 
 
-def build_df(data_dir, drop_invalid=True, upper_threshold=3, selected_features=None):
+def build_df(
+    data_dir, 
+    drop_invalid=True, 
+    upper_threshold=3, 
+    selected_features=None
+    ):
     """
     Build and return a pandas DataFrame containing all pixels from all AOIs.
-
-    Parameters
-    data_dir : str
-        Path to directory containing AOI subfolders with TIF files.
-
-    drop_invalid : bool, optional (default: True)
-        If True, drop rows where SD is NaN or SD < 0
-
-    upper_threshold : float or None, optional (default: 3)
-        If provided, rows with SD greater than this value are removed.
-    
-    selected_features : list[str] or None
-        If provided, only these feature channels (by name) are written to
-        each group's 'features' dataset. Names should be among FEATURE_NAMES.
 
     Returns:
     df : pandas.DataFrame
@@ -179,82 +170,82 @@ def build_df(data_dir, drop_invalid=True, upper_threshold=3, selected_features=N
     return df
 
 
-
-def build_h5(data_dir, out_dir, write_mask=True, upper_threshold=3, selected_features=None):
+def build_h5(
+    data_dir,
+    out_dir,
+    write_mask=True,
+    upper_threshold=3,
+    selected_features=None,
+    compression="gzip",
+    chunks=True,
+    dtype="float32",
+    out_name="data.h5",
+):
     """
-    Build and write a single HDF5 at out_dir/data.h5 with one group per AOI:
+    Build a single HDF5 at out_dir/out_name with one group per AOI.
 
-    For each AOI group the following datasets are written:
-      - '<aoi_name>/features': dataset of shape (H, W, 7) 
-      - '<aoi_name>/label':    dataset of shape (H, W, 1) 
-      - '<aoi_name>/mask':     dataset of shape (H, W)
-
-    Parameters
-    ----------
-    data_dir : str
-        Directory of AOI subfolders containing TIF stacks.
-
-    out_dir : str
-        Directory where data.h5 will be written.
-
-    write_mask : bool, optional (default: True)
-        When True, writes the '<aoi_name>/mask', [1=valid, 0=invalid]
-        Valid if SD is not NaN and SD >= 0 (and <= upper_threshold if set).
-
-    upper_threshold : float or None, optional (default: 3)
-    If provided, mask marks pixels with SD > upper_threshold as invalid (0).
-
-    selected_features : list[str] or None, optional (default: None)
-        If provided, only these feature channels (by name) are written to
-        each group's 'features' dataset. Names must be among FEATURE_NAMES.
-        The order you pass here is preserved in the written tensor.
+    For each AOI group:
+      - '<aoi>/features': (H, W, C)  where C = len(selected_features) or len(FEATURE_NAMES)
+      - '<aoi>/label':    (H, W, 1)  SD
+      - '<aoi>/mask':     (H, W)     [1=valid, 0=invalid]  (optional)
 
     """
-    # Ensure output directory exists
     os.makedirs(out_dir, exist_ok=True)
 
-    # List all AOI directories
     aoi_dirs = list_aoi_dirs(data_dir)
     if not aoi_dirs:
         raise FileNotFoundError(f"No AOI directories found in {data_dir}")
 
-    # Path to the single HDF5 file
-    file_path = os.path.join(out_dir, 'dataframe.h5')
+    # Map selected feature names -> indices in FEATURE_NAMES
+    if selected_features is not None:
+        feat_idxs = [FEATURE_NAMES.index(n) for n in selected_features]
+        feat_names_to_write = list(selected_features)
+    else:
+        feat_idxs = list(range(len(FEATURE_NAMES)))
+        feat_names_to_write = list(FEATURE_NAMES)
 
-    # Write all AOIs into one HDF5
-    with h5py.File(file_path, 'w') as hf:
+    file_path = os.path.join(out_dir, out_name)
+
+    with h5py.File(file_path, "w") as hf:
+        # Store global metadata
+        hf.attrs["feature_names"] = np.array(feat_names_to_write, dtype="S")
+        hf.attrs["upper_threshold"] = -1 if upper_threshold is None else float(upper_threshold)
+        hf.attrs["write_mask"] = bool(write_mask)
+
         for aoi_path in aoi_dirs:
             name = os.path.basename(aoi_path)
-            stack = load_stack(aoi_path).astype('float32')  # (H, W, 8)
+            stack = load_stack(aoi_path).astype(dtype)  # (H, W, len(FEATURE_NAMES)+1)
 
-            feats   = stack[..., :-1]        # (H, W, 7)
-            label2d = stack[..., -1]         # (H, W)
+            feats_all = stack[..., :-1] 
+            label2d   = stack[..., -1]       
 
-            # Optionally subset features by NAME
-            if selected_features is not None:
-                # verify names and map to indices in FEATURE_NAMES
-                missing = [n for n in selected_features if n not in FEATURE_NAMES]
-                if missing:
-                    raise KeyError(f"Unknown feature(s) in selected_features: {missing}")
-                idxs = [FEATURE_NAMES.index(n) for n in selected_features]
-                feats = feats[..., idxs]     # (H, W, C_selected)
-                feat_names_to_write = list(selected_features) 
-            else:
-                feat_names_to_write = FEATURE_NAMES
+            # Subset features
+            feats = feats_all[..., feat_idxs] 
+            label = label2d[..., np.newaxis]   
 
-            # Mask invalid SD (NaN or < 0) and optional upper threshold
+            # Validity mask
             valid = (~np.isnan(label2d)) & (label2d >= 0.0)
             if upper_threshold is not None:
                 valid &= (label2d <= float(upper_threshold))
 
-            label = label2d[..., np.newaxis] # (H, W, 1)
-
             grp = hf.create_group(name)
-            grp.create_dataset('features', data=feats,  compression='gzip')
-            grp.create_dataset('label',    data=label, compression='gzip')
+            grp.create_dataset(
+                "features", data=feats, compression=compression, chunks=chunks
+            )
+            grp.create_dataset(
+                "label", data=label.astype(dtype), compression=compression, chunks=chunks
+            )
             if write_mask:
-                grp.create_dataset('mask', data=valid.astype('uint8'), compression='gzip')
+                grp.create_dataset(
+                    "mask", data=valid.astype("uint8"), compression=compression, chunks=chunks
+                )
 
-    print(f"Wrote single HDF5 with {len(aoi_dirs)} AOI(s) at {file_path}")
+            # Per-AOI metadata
+            grp.attrs["aoi_name"] = name
+            grp.attrs["shape"] = feats.shape
+            grp.attrs["feature_names"] = np.array(feat_names_to_write, dtype="S")
+
+    print(f"Wrote HDF5 with {len(aoi_dirs)} AOI(s) at {file_path}")
+    print(f"features: {feat_names_to_write}")
 
 

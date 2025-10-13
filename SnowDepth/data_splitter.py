@@ -8,7 +8,7 @@ Implements splitting strategies for different models
 
 """
 
-def ML_split(dev_df, hold_df, seed, pxs_per_aoi=1000):
+def ML_split(dev_df, seed, pxs_per_aoi=1000):
 
     dev_df = dev_df.copy()
     
@@ -43,12 +43,7 @@ def ML_split(dev_df, hold_df, seed, pxs_per_aoi=1000):
     print(f"Features used: {feature_cols}")
     print(f"X_dev shape: {X_dev.shape}")
 
-    # Build hold‐out arrays using the same feature columns 
-    X_hold = hold_df[feature_cols].values
-    y_hold = hold_df['SD'].values
-    print(f"X_hold shape: {X_hold.shape}")
-
-    return X_dev, y_dev, groups, X_hold, y_hold
+    return X_dev, y_dev, groups
 
 
 def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, stride=None, min_valid_frac=0.0):
@@ -67,23 +62,25 @@ def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, 
 
     def _tile_one(feats, label, mask, ps, st, min_frac):
         H, W, C = feats.shape
-        xs, ys = [], []
+        xs, ys, ms = [], [], []
         for r in range(0, H - ps + 1, st):
             for c in range(0, W - ps + 1, st):
                 m = mask[r:r+ps, c:c+ps]
-                if m.size == 0:
+                if m.size == 0: 
                     continue
-                valid_frac = m.mean()  # mask is 1/0
-                if valid_frac < min_frac:
+                if m.mean() < min_frac:
                     continue
                 xs.append(feats[r:r+ps, c:c+ps, :])
                 ys.append(label[r:r+ps, c:c+ps, :])
+                ms.append(m[..., None])            
         if xs:
-            return np.stack(xs), np.stack(ys)
-        else:
-            # Return empty arrays with correct last dims if nothing qualified
-            return (np.empty((0, ps, ps, feats.shape[-1]), dtype=feats.dtype),
-                    np.empty((0, ps, ps, 1), dtype=label.dtype))
+            return np.stack(xs), np.stack(ys), np.stack(ms)
+        return (
+            np.empty((0, ps, ps, feats.shape[-1]), feats.dtype),
+            np.empty((0, ps, ps, 1), label.dtype),
+            np.empty((0, ps, ps, 1), np.uint8),
+        )
+
 
     with h5py.File(h5_path, 'r') as hf:
         aoi_names = list(hf.keys())
@@ -103,8 +100,8 @@ def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, 
             Xs, Ys = [], []
             for name in names:
                 grp = hf[name]
-                feats  = grp['features'][...]          # (H, W, C)
-                label  = grp['label'][...]             # (H, W, 1)
+                feats  = grp['features'][...]         
+                label  = grp['label'][...]             
                 if 'mask' in grp:
                     mask = grp['mask'][...].astype(np.uint8)
                 else:
@@ -122,9 +119,8 @@ def unet_split(h5_path, holdout_aoi, val_fraction=0.3, seed=18, patch_size=256, 
                 return (np.empty((0, patch_size, patch_size, feats.shape[-1]), dtype=np.float32),
                         np.empty((0, patch_size, patch_size, 1), dtype=np.float32))
             return np.concatenate(Xs, axis=0), np.concatenate(Ys, axis=0)
-
-        X_train, y_train = _load(train_names)
-        X_val,   y_val   = _load(val_names)
-        X_hold,  y_hold  = _load(test_names)
-
-    return (X_train, y_train), (X_val, y_val), (X_hold, y_hold)
+        
+        (X_train, y_train, m_train) = _load(train_names)
+        (X_val,   y_val,   m_val)   = _load(val_names)
+        (X_hold,  y_hold,  m_hold)  = _load(test_names)
+    return (X_train, y_train, m_train), (X_val, y_val, m_val), (X_hold, y_hold, m_hold)
