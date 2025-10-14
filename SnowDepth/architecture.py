@@ -161,14 +161,12 @@ def transformer_seg_model(
     for _ in range(depth):
         tokens = transformer_block(tokens, d_model, num_heads, mlp_dim, dropout=dropout)
 
-    # Project back to patch pixels and depatchify to (H, W, C)
     tokens = L.Dense(patch_dim)(tokens)
     feat_map = Depatchify(H, W, C, patch_size=patch_size)(tokens)
 
-    # Light conv decoder/head -> (H, W, 1)
     y = L.Conv2D(conv_head_filters, 3, padding="same", activation=_gelu)(feat_map)
     y = L.Conv2D(conv_head_filters, 3, padding="same", activation=_gelu)(y)
-    out = L.Conv2D(1, 1, padding="same", activation=None)(y)  # per-pixel regression
+    out = L.Conv2D(1, 1, padding="same", activation=None)(y) 
 
     return tf.keras.Model(inputs=inp, outputs=out, name="TransformerSeg")
 
