@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 import numpy as np
 import pandas as pd
 import rasterio
@@ -47,7 +46,7 @@ def load_stack(aoi_dir):
     """
 
     arrs = []
-    
+
     # Read SAR bands (by fixed index order)
     if not glob(os.path.join(aoi_dir, "*SAR.tif")):
         raise FileNotFoundError(f"No SAR file found in {aoi_dir}")

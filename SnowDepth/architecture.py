@@ -181,6 +181,6 @@ def zscore_from_train(x_train, *xs, eps=1e-6):
 
 def fill_nan_and_mask(y):
     # y: (N, H, W, 1)
-    mask = (~np.isnan(y))[..., 0].astype("float32")      # (N, H, W)
+    mask = (~np.isnan(y))[..., 0].astype("float32") 
     y_filled = np.where(np.isnan(y), 0.0, y).astype("float32")
     return y_filled, mask
