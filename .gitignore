@@ -7,3 +7,7 @@ UNet_weights_and_norm/
 /models/UNet_weights_and_norm/
 *.h5
 *.npz
+/h5_dir/
+/models/UNet_weights_and_norm/
+*.h5
+*.npz
