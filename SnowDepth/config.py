@@ -12,7 +12,7 @@ FEATURE_NAMES = [
     # Angles
     "LIA", "IAFE",
     # Topography
-    "Elevation", "Slope", "sin_Aspect", "cos_Aspect", "Veg_Heigth"
+    "Elevation", "Slope", "sin_Aspect", "cos_Aspect", "Veg_height"
 ]
 
 HOLDOUT_AOI = "UT_LC"

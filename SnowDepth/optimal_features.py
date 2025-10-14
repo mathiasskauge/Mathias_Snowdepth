@@ -29,8 +29,7 @@ def optimal_feature_sets(df, top_k, n_per_aoi):
         feature_cols=FEATURE_NAMES,
         top_k=top_k,
         max_intercorr=0.90,
-        n_neighbors=5,
-        random_state=42,
+        n_neighbors=5
     )
 
     # Create dict with algorithms and their selected features

@@ -103,7 +103,7 @@ def mi_select(df, feature_cols, top_k: int = 10, max_intercorr: float = 0.90, n_
     MI-based feature filtering: rank by MI, then prune by inter-feature correlation.
     Returns: selected_features, ranking_df, inter_corr_df (for candidate pool)
     """
-    rank = mi_scores(df, feature_cols, n_neighbors=n_neighbors, random_state=SEED)
+    rank = mi_scores(df, feature_cols, n_neighbors=n_neighbors)
     cand = rank.head(int(top_k)).copy()
     cand_feats = cand["feature"].tolist()
 

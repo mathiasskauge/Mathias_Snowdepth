@@ -46,7 +46,7 @@ def load_stack(aoi_dir):
     """
 
     arrs = []
-
+    
     # Read SAR bands (by fixed index order)
     if not glob(os.path.join(aoi_dir, "*SAR.tif")):
         raise FileNotFoundError(f"No SAR file found in {aoi_dir}")
@@ -104,10 +104,12 @@ def load_stack(aoi_dir):
     ])
 
     # Read DEM, Aspect, Slope, VH, SD
+    shape_info = []  # store (filename, original shape)
     for suf in ("DEM", "Slope", "Aspect", "VH", "SD"):
         tif_path = glob(os.path.join(aoi_dir, f"*{suf}.tif"))[0]
         with rasterio.open(tif_path) as src:
             arr = src.read(1).astype(np.float32)
+            shape_info.append((os.path.basename(tif_path), src.shape))
         if suf == "Aspect":
             rad = np.deg2rad(arr)
             arrs.append(np.sin(rad))
@@ -115,13 +117,20 @@ def load_stack(aoi_dir):
         else:
             arrs.append(arr)
 
+
     # Crop everything to the smallest H,W and stack
     H_min = min(a.shape[0] for a in arrs)
     W_min = min(a.shape[1] for a in arrs)
     arrs = [a[:H_min, :W_min] for a in arrs]
 
+    # Had an issue with Veg_height so drop pixel if any of features is nan
+    stack = np.stack(arrs, axis=-1)
+    nan_any = np.any(np.isnan(stack), axis=-1)
+    if nan_any.any():
+        stack[nan_any] = np.nan
+
     # stack: FEATURE_NAMES (27) + SD (label) as last channel
-    return np.stack(arrs, axis=-1)
+    return stack
 
 
 def build_df(
