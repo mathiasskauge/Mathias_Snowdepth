@@ -103,7 +103,7 @@ def load_stack(aoi_dir):
         LIA, IAFE,
     ])
 
-    # Read DEM, Aspect, Slope, SD
+    # Read DEM, Aspect, Slope, VH, SD
     for suf in ("DEM", "Slope", "Aspect", "VH", "SD"):
         tif_path = glob(os.path.join(aoi_dir, f"*{suf}.tif"))[0]
         with rasterio.open(tif_path) as src:

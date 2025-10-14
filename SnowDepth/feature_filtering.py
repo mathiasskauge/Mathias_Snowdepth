@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from pyHSICLasso import HSICLasso
 from sklearn.feature_selection import mutual_info_regression
+from SnowDepth.config import SEED
 
 
 def hsic_lasso_select(df, feature_cols, top_k: int = 10):
@@ -74,7 +75,7 @@ def pcc_select(df, feature_cols, top_k: int = 10, max_intercorr: float = 0.90, m
     return selected, rank, inter
 
 
-def mi_scores(df, feature_cols, n_neighbors=5, random_state=42):
+def mi_scores(df, feature_cols, n_neighbors=5):
     """
     Mutual Information (nonparametric) between each feature and SD.
     Returns a DataFrame sorted by MI desc with columns: ['feature','mi']
@@ -90,19 +91,19 @@ def mi_scores(df, feature_cols, n_neighbors=5, random_state=42):
     Xv = X.loc[valid].to_numpy(dtype=float)
     yv = y.loc[valid].to_numpy(dtype=float)
 
-    mi = mutual_info_regression(Xv, yv, n_neighbors=int(n_neighbors), random_state=random_state)
+    mi = mutual_info_regression(Xv, yv, n_neighbors=int(n_neighbors), random_state=SEED)
     return (
         pd.DataFrame({"feature": feature_cols, "mi": mi})
         .sort_values("mi", ascending=False)
         .reset_index(drop=True)
     )
 
-def mi_select(df, feature_cols, top_k: int = 10, max_intercorr: float = 0.90, n_neighbors=5, random_state=42):
+def mi_select(df, feature_cols, top_k: int = 10, max_intercorr: float = 0.90, n_neighbors=5):
     """
     MI-based feature filtering: rank by MI, then prune by inter-feature correlation.
     Returns: selected_features, ranking_df, inter_corr_df (for candidate pool)
     """
-    rank = mi_scores(df, feature_cols, n_neighbors=n_neighbors, random_state=random_state)
+    rank = mi_scores(df, feature_cols, n_neighbors=n_neighbors, random_state=SEED)
     cand = rank.head(int(top_k)).copy()
     cand_feats = cand["feature"].tolist()
 

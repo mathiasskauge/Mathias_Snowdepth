@@ -2,13 +2,14 @@ import h5py
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
+from SnowDepth.config import SEED
 
 """
 Implements splitting strategies for different models
 
 """
 
-def ML_split(dev_df, seed, pxs_per_aoi=10000):
+def ML_split(dev_df, pxs_per_aoi=10000):
 
     dev_df = dev_df.copy()
     
@@ -19,7 +20,7 @@ def ML_split(dev_df, seed, pxs_per_aoi=10000):
         .transform(lambda x: pd.qcut(x, 4, labels=False, duplicates='drop'))
     )
 
-    sss = StratifiedShuffleSplit(n_splits=1, train_size=pxs_per_aoi, random_state=seed)
+    sss = StratifiedShuffleSplit(n_splits=1, train_size=pxs_per_aoi, random_state=SEED)
 
     samples = []
 
@@ -50,7 +51,6 @@ def DL_split(
     h5_path,
     holdout_aoi,
     val_fraction=0.10,
-    seed=18,
     patch_size=128,
     stride=None,
     min_valid_frac=0.0
@@ -65,7 +65,7 @@ def DL_split(
         y: (N, patch_size, patch_size, 1)
         m: (N, patch_size, patch_size, 1) -> mask (1=valid, 0=invalid)
     """
-    rng = np.random.RandomState(seed)
+    rng = np.random.RandomState(SEED)
     if stride is None:
         stride = patch_size
 

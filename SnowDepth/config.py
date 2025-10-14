@@ -14,3 +14,7 @@ FEATURE_NAMES = [
     # Topography
     "Elevation", "Slope", "sin_Aspect", "cos_Aspect", "Veg_Heigth"
 ]
+
+HOLDOUT_AOI = "UT_LC"
+
+SEED = 18
