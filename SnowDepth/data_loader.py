@@ -40,9 +40,9 @@ def load_stack(aoi_dir):
     Read and stack raster bands for one AOI directory.
 
     Returns:
-    stack : np.ndarray of shape (H, W, 27)
+    stack : np.ndarray of shape (H, W, 28)
             Channels in this exact order:
-            FEATURE_NAMES (26) + SD label as the last channel
+            FEATURE_NAMES (27) + SD label as the last channel
     """
 
     arrs = []
@@ -60,8 +60,8 @@ def load_stack(aoi_dir):
         Sigma_VV_lin = src.read(4).astype(np.float32)   # Sigma0_VV
         Gamma_VV_lin = src.read(5).astype(np.float32)   # Gamma0_VV
         Beta_VV_lin  = src.read(6).astype(np.float32)   # Beta0_VV
-        Gamma_VH2_lin = src.read(7).astype(np.float32)  # Gamma0_VH_2 (RTC)
-        Gamma_VV2_lin = src.read(8).astype(np.float32)  # Gamma0_VV_2 (RTC)
+        Gamma_VH_RTC_lin = src.read(7).astype(np.float32)  # Gamma0_VH (RTC)
+        Gamma_VV_RTC_lin = src.read(8).astype(np.float32)  # Gamma0_VV (RTC)
         LIA  = src.read(9).astype(np.float32)           # localIncidenceAngle
         IAFE = src.read(10).astype(np.float32)          # incidenceAngleFromEllipsoid
 
@@ -72,24 +72,24 @@ def load_stack(aoi_dir):
     Gamma_VV = _to_db(Gamma_VV_lin)
     Beta_VH  = _to_db(Beta_VH_lin)
     Beta_VV  = _to_db(Beta_VV_lin)
-    Gamma_VH_RTC = _to_db(Gamma_VH2_lin)
-    Gamma_VV_RTC = _to_db(Gamma_VV2_lin)
+    Gamma_VH_RTC = _to_db(Gamma_VH_RTC_lin)
+    Gamma_VV_RTC = _to_db(Gamma_VV_RTC_lin)
 
     # Linear sums/differences (linear)
     Sigma_sum      = Sigma_VH_lin + Sigma_VV_lin
     Gamma_sum      = Gamma_VH_lin + Gamma_VV_lin
     Beta_sum       = Beta_VH_lin  + Beta_VV_lin
-    Gamma_RTC_sum  = Gamma_VH2_lin + Gamma_VV2_lin
+    Gamma_RTC_sum  = Gamma_VH_RTC_lin + Gamma_VV_RTC_lin
     Sigma_diff     = Sigma_VH_lin - Sigma_VV_lin
     Gamma_diff     = Gamma_VH_lin - Gamma_VV_lin
     Beta_diff      = Beta_VH_lin  - Beta_VV_lin
-    Gamma_RTC_diff = Gamma_VH2_lin - Gamma_VV2_lin
+    Gamma_RTC_diff = Gamma_VH_RTC_lin - Gamma_VV_RTC_lin
 
     # Ratios in dB
     Sigma_ratio     = _ratio_db(Sigma_VH_lin, Sigma_VV_lin)
     Gamma_ratio     = _ratio_db(Gamma_VH_lin, Gamma_VV_lin)
     Beta_ratio      = _ratio_db(Beta_VH_lin,  Beta_VV_lin)
-    Gamma_RTC_ratio = _ratio_db(Gamma_VH2_lin, Gamma_VV2_lin)
+    Gamma_RTC_ratio = _ratio_db(Gamma_VH_RTC_lin, Gamma_VV_RTC_lin)
 
     # Append in the exact FEATURE_NAMES order
     arrs.extend([
@@ -104,7 +104,7 @@ def load_stack(aoi_dir):
     ])
 
     # Read DEM, Aspect, Slope, SD
-    for suf in ("DEM", "Slope", "Aspect", "SD"):
+    for suf in ("DEM", "Slope", "Aspect", "VH", "SD"):
         tif_path = glob(os.path.join(aoi_dir, f"*{suf}.tif"))[0]
         with rasterio.open(tif_path) as src:
             arr = src.read(1).astype(np.float32)
@@ -120,7 +120,7 @@ def load_stack(aoi_dir):
     W_min = min(a.shape[1] for a in arrs)
     arrs = [a[:H_min, :W_min] for a in arrs]
 
-    # stack: FEATURE_NAMES (26) + SD (label) as last channel
+    # stack: FEATURE_NAMES (27) + SD (label) as last channel
     return np.stack(arrs, axis=-1)
 
 
@@ -143,7 +143,7 @@ def build_df(
 
     for aoi_path in aoi_dirs:
         name = os.path.basename(aoi_path)
-        stack = load_stack(aoi_path)  # (H, W, 27) -> 26 features + SD
+        stack = load_stack(aoi_path)  # (H, W, 27) -> 27 features + SD
         H, W, _ = stack.shape
         rows, cols = np.indices((H, W))
         # map stack to columns following FEATURE_NAMES order
@@ -174,7 +174,6 @@ def build_df(
         df = df[keep].copy()
 
     return df
-
 
 
 def build_h5(

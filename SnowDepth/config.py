@@ -12,5 +12,5 @@ FEATURE_NAMES = [
     # Angles
     "LIA", "IAFE",
     # Topography
-    "Elevation", "Slope", "sin_Aspect", "cos_Aspect"
+    "Elevation", "Slope", "sin_Aspect", "cos_Aspect", "Veg_Heigth"
 ]
