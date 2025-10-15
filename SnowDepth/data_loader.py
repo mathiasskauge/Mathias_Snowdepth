@@ -136,7 +136,7 @@ def load_stack(aoi_dir):
 def build_df(
     data_dir, 
     drop_invalid=True, 
-    upper_threshold=3,
+    upper_threshold=None,
     selected_features=None
     ):
     """
@@ -152,10 +152,10 @@ def build_df(
 
     for aoi_path in aoi_dirs:
         name = os.path.basename(aoi_path)
-        stack = load_stack(aoi_path)  # (H, W, 27) -> 27 features + SD
+        stack = load_stack(aoi_path)  # (H, W, 27 features + SD)
         H, W, _ = stack.shape
         rows, cols = np.indices((H, W))
-        # map stack to columns following FEATURE_NAMES order
+
         data = {
             'aoi_name': [name] * (H * W),
             'row': rows.ravel(),
@@ -169,11 +169,12 @@ def build_df(
 
     df = pd.concat(dfs, ignore_index=True)
 
+    # Keeps NaNs as NaN, sets negatives to 0, caps to upper_threshold if provided
+    df['SD'] = df['SD'].clip(lower=0, upper=upper_threshold)
+
     if drop_invalid:
-        valid = df['SD'].notna() & (df['SD'] >= 0)
-        if upper_threshold is not None:
-            valid &= (df['SD'] <= upper_threshold)
-        df = df.loc[valid].reset_index(drop=True)
+        # Only drop rows where SD is NaN; keep zeros and capped values
+        df = df.loc[df['SD'].notna()].reset_index(drop=True)
 
     if selected_features is not None:
         keep = ["aoi_name", "row", "col", "SD"] + list(selected_features)
@@ -185,11 +186,12 @@ def build_df(
     return df
 
 
+
 def build_h5(
     data_dir,
     out_dir,
     write_mask=True,
-    upper_threshold=3,
+    upper_threshold=None,
     selected_features=None,
     compression="gzip",
     chunks=True,
@@ -200,9 +202,9 @@ def build_h5(
     Build a single HDF5 at out_dir/out_name with one group per AOI.
 
     For each AOI group:
-      - '<aoi>/features': (H, W, C)  where C = len(selected_features) or len(FEATURE_NAMES)
-      - '<aoi>/label':    (H, W, 1)  SD
-      - '<aoi>/mask':     (H, W)     [1=valid, 0=invalid]  (optional)
+      - '<aoi>/features': (H, W, C)
+      - '<aoi>/label':    (H, W, 1)  SD (clamped: negatives->0, optionally capped)
+      - '<aoi>/mask':     (H, W)     [1=valid (SD not NaN), 0=invalid]  (optional)
     """
     os.makedirs(out_dir, exist_ok=True)
     aoi_dirs = list_aoi_dirs(data_dir)
@@ -224,28 +226,32 @@ def build_h5(
         hf.attrs["feature_names"] = np.array(feat_names_to_write, dtype="S")
         hf.attrs["upper_threshold"] = -1 if upper_threshold is None else float(upper_threshold)
         hf.attrs["write_mask"] = bool(write_mask)
+        hf.attrs["sd_clamping"] = np.string_("applied: lower=0, upper=upper_threshold")
+
         for aoi_path in aoi_dirs:
             name = os.path.basename(aoi_path)
             stack = load_stack(aoi_path).astype(dtype)  # (H, W, len(FEATURE_NAMES)+1)
-            feats_all = stack[..., :-1] 
-            label2d   = stack[..., -1]       
+            feats_all = stack[..., :-1]
+            label2d   = stack[..., -1]
+
+            # --- NEW: clamp SD in-place; preserve NaNs ---
+            # negatives -> 0; optionally cap to upper_threshold
+            label2d = np.clip(label2d, a_min=0, a_max=upper_threshold) if upper_threshold is not None \
+                      else np.where(np.isnan(label2d), np.nan, np.maximum(label2d, 0))
 
             # Subset features
-            feats = feats_all[..., feat_idxs] 
-            label = label2d[..., np.newaxis]   
+            feats = feats_all[..., feat_idxs]
+            label = label2d[..., np.newaxis]
 
-            # Validity mask
-            valid = (~np.isnan(label2d)) & (label2d >= 0.0)
-            if upper_threshold is not None:
-                valid &= (label2d <= float(upper_threshold))
+            # Mask = SD not NaN (no threshold-based dropping)
+            valid = (~np.isnan(label2d))
 
             grp = hf.create_group(name)
             grp.create_dataset("features", data=feats, compression=compression, chunks=chunks)
             grp.create_dataset("label", data=label.astype(dtype), compression=compression, chunks=chunks)
 
             if write_mask:
-                grp.create_dataset(
-                    "mask", data=valid.astype("uint8"), compression=compression, chunks=chunks)
+                grp.create_dataset("mask", data=valid.astype("uint8"), compression=compression, chunks=chunks)
 
             # Per-AOI metadata
             grp.attrs["aoi_name"] = name

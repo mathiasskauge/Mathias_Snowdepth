@@ -1,2 +1,2 @@
-winner=PCC
-val_loss=0.042974
+winner=MI
+val_loss=0.020930
